@@ -1,0 +1,46 @@
+{
+  "name": "snipa",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Non-custodial Pump.fun token monitor and guarded trader",
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "tsx --test src/config.test.ts src/telegram-config.test.ts src/telegram-content.test.ts src/telegram-moderator.test.ts src/pump-bonding-progress.test.ts src/solana-public-buys.test.ts src/telegram-alerts.test.ts src/monitor.test.ts src/trader.test.ts src/journal.test.ts src/history.test.ts src/transaction-policy.test.ts src/live-safety.test.ts src/execution-lock.test.ts src/market-events.test.ts src/reserve-snapshots.test.ts src/pumpswap-fees.test.ts src/projection-events.test.ts src/scanner-read-model.test.ts src/scanner-api.test.ts",
+    "history": "tsx src/index.ts history",
+    "wallet": "tsx src/index.ts wallet",
+    "monitor": "tsx src/index.ts monitor",
+    "dashboard-api": "tsx src/index.ts dashboard-api",
+    "telegram-mod": "tsx src/telegram-moderator-entry.ts",
+    "telegram-alerts": "tsx src/telegram-alerts-entry.ts",
+    "bots:start": "pm2 start ecosystem.config.cjs --update-env",
+    "bots:restart": "pm2 restart ecosystem.config.cjs --update-env",
+    "bots:status": "pm2 status",
+    "bots:logs": "pm2 logs",
+    "bots:stop": "pm2 stop ecosystem.config.cjs",
+    "trade": "tsx src/index.ts trade"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.98.4",
+    "bs58": "^6.0.0",
+    "dotenv": "^17.2.2",
+    "grammy": "^1.46.0",
+    "ws": "^8.18.3",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/ws": "^8.18.1",
+    "pm2": "^7.0.4",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  },
+  "overrides": {
+    "jayson": {
+      "uuid": "11.1.1"
+    }
+  }
+}

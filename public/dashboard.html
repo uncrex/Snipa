@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Snipa Scanner</title>
+  <link rel="stylesheet" href="/dashboard.css">
+  <script src="/dashboard.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-block"><div class="brand-mark" aria-hidden="true">S</div><div><p class="brand">SNIPA</p><p class="environment">Scanner control plane</p></div></div>
+    <div class="health-strip" aria-label="System health"><span class="health-dot" id="health-dot"></span><span id="health-label">Connecting</span><span class="separator"></span><span id="decision-latency" title="Local time from WebSocket observation to first decision">Decision P95 unavailable</span><span class="separator"></span><span id="last-update">No update</span><button class="plain-button" id="refresh-button" type="button">Refresh</button></div>
+  </header>
+  <main>
+    <section class="summary-band" aria-labelledby="scanner-heading">
+      <div><p class="eyebrow">Live operations</p><h1 id="scanner-heading">Token scanner</h1><p class="summary-status"><span id="token-total">0</span> detected tokens</p></div>
+      <canvas id="activity-canvas" width="480" height="112" aria-label="Token status distribution"></canvas>
+      <dl class="metric-row">
+        <div><dt>Scanning</dt><dd id="metric-scanning">0</dd></div><div><dt>Monitoring</dt><dd id="metric-monitoring">0</dd></div>
+        <div><dt>Entered</dt><dd id="metric-entered">0</dd></div><div><dt>Rejected</dt><dd id="metric-rejected">0</dd></div>
+      </dl>
+    </section>
+    <section class="scanner-panel">
+      <div class="toolbar">
+        <label class="search-control"><span>Search</span><input id="search-input" type="search" placeholder="Name, symbol, or mint" autocomplete="off"></label>
+        <label class="sort-control"><span>Sort</span><select id="sort-select"><option value="newest">Newest detected</option><option value="oldest">Oldest detected</option><option value="status">Status</option><option value="token">Token name</option></select></label>
+        <div class="status-filters" id="status-filters" aria-label="Filter by status">
+          <button class="filter-button active" type="button" data-status="">All</button><button class="filter-button" type="button" data-status="scanning">Scanning</button>
+          <button class="filter-button" type="button" data-status="monitoring">Monitoring</button><button class="filter-button" type="button" data-status="entered">Entered</button>
+          <button class="filter-button" type="button" data-status="rejected">Rejected</button><button class="filter-button" type="button" data-status="skipped">Skipped</button>
+        </div>
+      </div>
+      <div class="data-state hidden" id="error-state" role="alert"></div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Token</th><th>Age</th><th>Venue</th><th>Stage</th><th>Status</th><th>Safety</th><th>Momentum</th><th>Expected return</th><th>Decision</th></tr></thead><tbody id="scanner-body"></tbody></table>
+        <div class="data-state" id="empty-state">No token events recorded.</div>
+      </div>
+    </section>
+  </main>
+  <div class="drawer-backdrop hidden" id="drawer-backdrop"></div>
+  <aside class="token-drawer" id="token-drawer" aria-hidden="true" aria-labelledby="drawer-title">
+    <div class="drawer-header"><div><p class="eyebrow" id="drawer-symbol">Token</p><h2 id="drawer-title">Token detail</h2></div><button class="plain-button" id="close-drawer" type="button" aria-label="Close token detail">Close</button></div>
+    <div class="drawer-content" id="drawer-content"></div>
+  </aside>
+</body>
+</html>
