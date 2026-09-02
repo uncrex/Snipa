@@ -74,14 +74,24 @@ export function autoBuyRejectionReasons(
   return reasons;
 }
 
-function wait(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+function wait(milliseconds: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(finish, milliseconds);
+    function finish(): void {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", finish);
+      resolve();
+    }
+    signal?.addEventListener("abort", finish, { once: true });
+  });
 }
 
 export async function monitorTokens(
   config: Config,
   wallet: Keypair | undefined,
   connection: Connection,
+  signal?: AbortSignal,
 ): Promise<void> {
   const nameFilter = optionalRegex(config.TOKEN_NAME_REGEX);
   const symbolFilter = optionalRegex(config.TOKEN_SYMBOL_REGEX);
@@ -122,11 +132,20 @@ export async function monitorTokens(
     }));
   };
 
-  while (true) {
+  while (!signal?.aborted) {
     const socket = new WebSocket(`wss://pumpportal.fun/api/data${apiKey}`);
     let opened = false;
 
     await new Promise<void>((resolve) => {
+      let stopping = false;
+      const stop = (): void => {
+        stopping = true;
+        socket.close();
+        resolve();
+      };
+      if (signal?.aborted) stop();
+      else signal?.addEventListener("abort", stop, { once: true });
+
       socket.on("open", () => {
         opened = true;
         streamContinuity.connected();
@@ -246,6 +265,11 @@ export async function monitorTokens(
 
       socket.on("error", (error) => console.error(`WebSocket error: ${error.message}`));
       socket.on("close", () => {
+        signal?.removeEventListener("abort", stop);
+        if (stopping) {
+          resolve();
+          return;
+        }
         streamContinuity.disconnected();
         publishStreamHealth(
           "disconnected",
@@ -255,10 +279,12 @@ export async function monitorTokens(
       });
     });
 
+    if (signal?.aborted) break;
     if (opened) reconnectAttempt = 0;
     const delay = reconnectDelay(reconnectAttempt);
     reconnectAttempt += 1;
     console.log(`PumpPortal connection closed. Reconnecting in ${delay / 1_000}s.`);
-    await wait(delay);
+    await wait(delay, signal);
   }
+  await projectionPublisher?.waitForIdle();
 }

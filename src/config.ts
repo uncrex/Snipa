@@ -29,8 +29,8 @@ const optionalNonemptyString = z.preprocess(
 
 const environmentSchema = z.object({
   SOLANA_RPC_URL: z.string().url().default("https://api.mainnet-beta.solana.com"),
-  SOLANA_KEYPAIR_PATH: z.string().optional(),
-  SOLANA_PRIVATE_KEY: z.string().optional(),
+  SOLANA_KEYPAIR_PATH: optionalNonemptyString,
+  SOLANA_PRIVATE_KEY: optionalNonemptyString,
   PUMPPORTAL_API_KEY: optionalNonemptyString,
   LIVE_TRADING: booleanValue,
   LIVE_TRADING_ARM_PATH: z.string().min(1).optional(),

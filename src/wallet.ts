@@ -25,7 +25,7 @@ function decodeSecret(value: string): Uint8Array {
 
 export async function loadWallet(config: Config): Promise<Keypair> {
   let secret: string | undefined = config.SOLANA_PRIVATE_KEY;
-  if (config.SOLANA_KEYPAIR_PATH) {
+  if (!secret && config.SOLANA_KEYPAIR_PATH) {
     secret = await readFile(expandHome(config.SOLANA_KEYPAIR_PATH), "utf8");
   }
   if (!secret) {

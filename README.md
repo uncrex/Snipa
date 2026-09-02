@@ -61,7 +61,9 @@ Copy-Item .env.example .env
 
 Edit `.env` and set `SOLANA_KEYPAIR_PATH` to a Solana CLI keypair JSON file.
 `SOLANA_PRIVATE_KEY` also accepts a base58 secret or JSON byte array, but a file
-path avoids placing the key directly in environment configuration.
+path avoids placing the key directly in environment configuration. When both are
+configured, a nonblank `SOLANA_PRIVATE_KEY` takes precedence. Enter secrets only
+in the local `.env` file; never paste a private key into chat or the dashboard.
 
 Check the connected address and balance:
 
@@ -267,7 +269,8 @@ reasons. Each token's first decision-stage event may record local
 observation-to-decision latency. This measures time after the PumpPortal message
 reaches the monitor; it is not source, network, validator, or landing latency.
 
-Start the loopback-only, read-only scanner dashboard without loading a wallet:
+Start the loopback-only scanner dashboard without loading a wallet during startup
+or read-only requests:
 
 ```powershell
 npm.cmd run dashboard-api
@@ -280,10 +283,64 @@ analytics not yet implemented, and exact decision findings in a token detail
 drawer. The drawer's decision timeline contains only accepted projection events,
 in replay order, with their recorded stage, status, timestamp, and exact reasons.
 Sorting and pinning are browser preferences and cannot change engine decisions.
+Opening a token also loads its deepest indexed Solana pool from GeckoTerminal,
+shows a live 120-minute USD candlestick chart, current price, liquidity, 24-hour
+change and volume, and the latest 30 indexed swaps with Solscan transaction and
+wallet links. The drawer refreshes every 15 seconds while open. New launches may
+show market data as unavailable until GeckoTerminal indexes a pool; provider data
+is informational and is not used as an execution quote.
+The main scanner table includes a Pump.fun link and a Quick Buy action for every
+token. The toolbar amount is shared by all row actions, capped by the server's
+configured maximum, and persisted locally in the browser. Every row buy shows an
+explicit LIVE or PAPER confirmation and uses the same protected manual-buy
+command path as the token drawer. The scanner can sort indexed market caps in
+either direction, with unavailable values kept at the end.
+
+The table polls USD market capitalization every five seconds for the 90 newest
+scanner mints from DexScreener's batched Solana token endpoint. Each value comes
+from the token's highest-liquidity indexed pool where that mint is the base
+token. New launches show `Indexing` until a qualifying pool and market-cap value
+are available; older rows show `Outside fast window`. The response is cached for
+60 seconds while its mint set is unchanged to bound provider and RPC load. `Paid
+boosts` is DexScreener's active paid-boost count for that same pool;
+it measures purchased visibility, not legitimacy, organic demand, or expected
+profitability.
+The `Active traders (5m)` column is an attention proxy from GeckoTerminal's top
+indexed pool, calculated as five-minute buyers plus sellers. A wallet active on
+both sides may be counted twice, so this is not a unique visitor count. Both sort
+directions keep unavailable values last. To respect public provider limits, the
+dashboard refreshes the 30 most recently detected tokens every 60 seconds.
+The same bounded pool batch provides buy pressure (five-minute buys divided by
+all five-minute trades) and volume acceleration (the five-minute volume pace
+divided by the preceding ten-minute pace). Liquidity comes from the deepest
+DexScreener pool. Verified Pump accounts provide bonding-curve progress, with
+migrated tokens shown at 100%. Top-10 account concentration is calculated from
+raw RPC token balances and total supply for the five newest tokens every five
+minutes; it may include pools or bonding-curve accounts and is not an identity-
+level holder metric. Every signal can be sorted in either direction, with
+unavailable values last.
+Each detected token also has a clearly labeled manual-buy control capped by
+`BUY_AMOUNT_SOL`. Submitting it requires confirmation,
+a fresh command UUID and timestamp, same-origin and CSRF validation, and an exact
+mint already present in the scanner projection. Duplicate command IDs execute at
+most once. The server loads the wallet only after these checks and delegates to
+the same guarded `executeTrade` path used by the CLI. Paper mode records the trade
+without constructing or broadcasting a transaction. Live mode additionally
+requires the live-trading arm, wallet reserve, simulation, transaction-policy,
+signing, broadcast, confirmation, and durable command-audit checks.
 
 `GET /api/scanner` returns replayed token rows and accepts optional `status` and
 `limit` query parameters. `GET /api/health` reports projection-log replay and
-latest launch-stream continuity health.
+latest launch-stream continuity health. `GET /api/control` returns only ephemeral
+browser control metadata. `POST /api/manual-buy` accepts protected paper-buy
+commands and never returns signing material or wallet configuration.
+`GET /api/token-market?mint=<mint>` proxies normalized public pool, candle, and
+swap data only for mints already present in the scanner projection and caches it
+briefly to respect provider limits.
+`GET /api/token-activity` returns the bounded, cached five-minute active-trader
+proxy for scanner mints only.
+`GET /api/holder-concentration` returns the bounded, cached top-10 token-account
+concentration for scanner mints only.
 Both endpoints expose the latest accepted event timestamp, event age, configured
 stale threshold, stale state, and replayed observation-to-decision sample count,
 P50, P95, and maximum. The UI labels stale projections explicitly
@@ -291,7 +348,7 @@ instead of treating a newly generated API response as fresh market data. Set
 `DASHBOARD_PROJECTION_STALE_AFTER_MS` to tune the threshold (default `60000`).
 The host is restricted to `127.0.0.1` or `::1` through `DASHBOARD_API_HOST`, with
 port `8787` by default. Responses disable caching and include no wallet secrets,
-provider credentials, command endpoint, or signing capability.
+provider credentials, or signing capability.
 
 Summarize the journal without loading a wallet:
 

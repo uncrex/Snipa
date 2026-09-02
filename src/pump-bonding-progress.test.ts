@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { PublicKey, type AccountInfo } from "@solana/web3.js";
-import { calculatePumpBondingProgress } from "./pump-bonding-progress.js";
+import { calculatePumpBondingProgress, readPumpMarketMetricsUsd } from "./pump-bonding-progress.js";
 import { PUMP_PROGRAM_ID } from "./transaction-policy.js";
 
 const owner = new PublicKey(PUMP_PROGRAM_ID);
@@ -71,4 +71,31 @@ test("bonding progress rejects mismatched creation parameters", () => {
     () => calculatePumpBondingProgress(curve({ virtualSol: 0n }), global()),
     /invalid virtual reserves/,
   );
+});
+
+test("batched Pump metrics use one SOL price and verified curve accounts", async () => {
+  const mint = "So11111111111111111111111111111111111111112";
+  const [globalAddress] = PublicKey.findProgramAddressSync(
+    [Buffer.from("global")],
+    owner,
+  );
+  let rpcCalls = 0;
+  let priceCalls = 0;
+  const connection = {
+    getMultipleAccountsInfo: async (addresses: PublicKey[]) => {
+      rpcCalls += 1;
+      return addresses.map((address) => address.equals(globalAddress) ? global() : curve());
+    },
+  };
+  const fetchImpl: typeof fetch = async () => {
+    priceCalls += 1;
+    return Response.json({ data: { amount: "50" } });
+  };
+
+  const result = await readPumpMarketMetricsUsd(connection, [mint], fetchImpl);
+
+  assert.equal(result.get(mint)?.marketCapUsd, 5_000);
+  assert.equal(result.get(mint)?.progressBps, 5_000);
+  assert.equal(rpcCalls, 2);
+  assert.equal(priceCalls, 1);
 });

@@ -1,7 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { autoBuyRejectionReasons, canAutoBuy, reconnectDelay } from "./monitor.js";
+import type { Connection } from "@solana/web3.js";
+import { parseConfig } from "./config.js";
+import { autoBuyRejectionReasons, canAutoBuy, monitorTokens, reconnectDelay } from "./monitor.js";
 import { requiredBuyBalance } from "./trader.js";
+
+test("monitor exits before opening a stream when shutdown is already requested", async () => {
+  const shutdown = new AbortController();
+  shutdown.abort();
+  await monitorTokens(
+    parseConfig({ DASHBOARD_EVENT_LOG_ENABLED: "false" }),
+    undefined,
+    {} as Connection,
+    shutdown.signal,
+  );
+});
 
 test("reconnectDelay grows exponentially and caps at 30 seconds", () => {
   assert.deepEqual(

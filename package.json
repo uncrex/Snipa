@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "check": "tsc --noEmit",
-    "test": "tsx --test src/config.test.ts src/telegram-config.test.ts src/telegram-content.test.ts src/telegram-moderator.test.ts src/pump-bonding-progress.test.ts src/solana-public-buys.test.ts src/telegram-alerts.test.ts src/monitor.test.ts src/trader.test.ts src/journal.test.ts src/history.test.ts src/transaction-policy.test.ts src/live-safety.test.ts src/execution-lock.test.ts src/market-events.test.ts src/reserve-snapshots.test.ts src/pumpswap-fees.test.ts src/projection-events.test.ts src/scanner-read-model.test.ts src/scanner-api.test.ts",
+    "test": "tsx --test src/config.test.ts src/telegram-config.test.ts src/telegram-content.test.ts src/telegram-moderator.test.ts src/pump-bonding-progress.test.ts src/solana-public-buys.test.ts src/telegram-alerts.test.ts src/monitor.test.ts src/trader.test.ts src/journal.test.ts src/history.test.ts src/transaction-policy.test.ts src/live-safety.test.ts src/execution-lock.test.ts src/market-events.test.ts src/reserve-snapshots.test.ts src/pumpswap-fees.test.ts src/projection-events.test.ts src/scanner-read-model.test.ts src/scanner-api.test.ts src/token-market-data.test.ts src/token-market-caps.test.ts src/wallet.test.ts",
     "history": "tsx src/index.ts history",
     "wallet": "tsx src/index.ts wallet",
     "monitor": "tsx src/index.ts monitor",

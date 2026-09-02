@@ -138,3 +138,74 @@ export async function readPumpBondingProgress(
     return progress;
   }
 }
+
+interface AccountInfoReader {
+  getMultipleAccountsInfo(
+    publicKeys: PublicKey[],
+    commitment: "confirmed",
+  ): Promise<Array<AccountInfo<Buffer> | null>>;
+}
+
+export interface PumpMarketMetrics {
+  marketCapUsd: number;
+  progressBps: number;
+}
+
+export async function readPumpMarketMetricsUsd(
+  connection: AccountInfoReader,
+  mintAddresses: readonly string[],
+  fetchImpl: typeof fetch = fetch,
+): Promise<Map<string, PumpMarketMetrics>> {
+  const uniqueMints = [...new Set(mintAddresses)];
+  if (uniqueMints.length === 0) return new Map();
+  const [globalAddress] = PublicKey.findProgramAddressSync([Buffer.from("global")], pumpProgram);
+  const curveAddresses = uniqueMints.map((mintAddress) => PublicKey.findProgramAddressSync(
+    [Buffer.from("bonding-curve"), new PublicKey(mintAddress).toBuffer()],
+    pumpProgram,
+  )[0]);
+  const accountBatches: Array<Promise<Array<AccountInfo<Buffer> | null>>> = [];
+  for (let index = 0; index < curveAddresses.length; index += 100) {
+    accountBatches.push(connection.getMultipleAccountsInfo(
+      curveAddresses.slice(index, index + 100),
+      "confirmed",
+    ));
+  }
+  const [globalAccounts, curveBatches, solUsdResponse] = await Promise.all([
+    connection.getMultipleAccountsInfo([globalAddress], "confirmed"),
+    Promise.all(accountBatches),
+    fetchImpl("https://api.coinbase.com/v2/prices/SOL-USD/spot", {
+      signal: AbortSignal.timeout(3_000),
+    }).catch(() => null),
+  ]);
+  if (!solUsdResponse?.ok) return new Map();
+  const input = await solUsdResponse.json() as { data?: { amount?: unknown } };
+  const solUsdPrice = typeof input.data?.amount === "string"
+    ? Number(input.data.amount)
+    : Number.NaN;
+  if (!Number.isFinite(solUsdPrice) || solUsdPrice <= 0) return new Map();
+
+  const globalAccount = globalAccounts[0] ?? null;
+  const curveAccounts = curveBatches.flat();
+  const metrics = new Map<string, PumpMarketMetrics>();
+  uniqueMints.forEach((mint, index) => {
+    try {
+      const progress = calculatePumpBondingProgress(curveAccounts[index] ?? null, globalAccount);
+      metrics.set(mint, {
+        marketCapUsd: progress.currentMarketCapSol * solUsdPrice,
+        progressBps: progress.progressBps,
+      });
+    } catch {
+      // Missing, migrated, or non-Pump accounts are expected in mixed scanner lists.
+    }
+  });
+  return metrics;
+}
+
+export async function readPumpMarketCapsUsd(
+  connection: AccountInfoReader,
+  mintAddresses: readonly string[],
+  fetchImpl: typeof fetch = fetch,
+): Promise<Map<string, number>> {
+  const metrics = await readPumpMarketMetricsUsd(connection, mintAddresses, fetchImpl);
+  return new Map([...metrics].map(([mint, value]) => [mint, value.marketCapUsd]));
+}
