@@ -34,6 +34,7 @@ const environmentSchema = z.object({
   PUMPPORTAL_API_KEY: optionalNonemptyString,
   LIVE_TRADING: booleanValue,
   LIVE_TRADING_ARM_PATH: z.string().min(1).optional(),
+  LIVE_TRADING_ARM_MAX_AGE_MS: z.coerce.number().int().min(1_000).max(3_600_000).default(60_000),
   AUTO_BUY: booleanValue,
   BUY_AMOUNT_SOL: z.coerce.number().positive().max(1).default(0.01),
   MAX_BUYS_PER_SESSION: z.coerce.number().int().positive().max(20).default(1),

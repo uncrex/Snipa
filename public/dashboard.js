@@ -21,6 +21,7 @@ const state = {
   status: "",
   query: "",
   sort: "newest",
+  candidateMode: false,
   pins: loadPins(),
   control: null,
   selectedMint: null,
@@ -29,7 +30,9 @@ const state = {
   marketCapsLoaded: false,
   tokenActivity: {},
   holderConcentration: {},
+  quickBuyStatuses: {},
   quickBuyAmount: loadQuickBuyAmount(),
+  phantomPublicKey: null,
 };
 const $ = (selector) => document.querySelector(selector);
 const elements = {
@@ -46,6 +49,7 @@ const elements = {
   search: $("#search-input"),
   sort: $("#sort-select"),
   quickAmount: $("#quick-buy-amount"),
+  candidateMode: $("#candidate-mode"),
   filters: $("#status-filters"),
   refresh: $("#refresh-button"),
   canvas: $("#activity-canvas"),
@@ -132,18 +136,32 @@ function visibleTokens() {
   const query = state.query.trim().toLowerCase();
   return state.tokens
     .filter(
-      (token) =>
-        (!state.status || token.status === state.status) &&
+      (token) => {
+        const marketCap = state.marketCaps[token.mint]?.marketCapUsd;
+        const activity = state.tokenActivity[token.mint];
+        const buyerTelemetryAvailable = Number.isFinite(activity?.buyers5m)
+          && Number.isFinite(activity?.buyPressurePercent);
+        const buyerCheckPassed = !buyerTelemetryAvailable
+          || (activity.buyers5m > 0 && activity.buyPressurePercent > 50);
+        const candidate = Date.now() - Date.parse(token.detectedAt) < 60_000
+          && Number.isFinite(marketCap)
+          && marketCap < 5_000
+          && buyerCheckPassed
+          && token.status !== "rejected"
+          && token.status !== "skipped";
+        return (!state.candidateMode || candidate)
+        && (!state.status || token.status === state.status) &&
         (!query ||
           [token.name, token.symbol, token.mint].some((value) =>
             value.toLowerCase().includes(query),
-          )),
+          ));
+      },
     )
     .sort(compareTokens);
 }
 function renderTable() {
   const tokens = visibleTokens();
-  const buyEnabled = Boolean(state.control?.manualBuy?.enabled);
+  const buyEnabled = Boolean(state.control?.phantomBuy?.enabled && state.phantomPublicKey);
   elements.body.innerHTML = tokens
     .map((token) => {
       const pinned = state.pins.has(token.mint);
@@ -165,11 +183,40 @@ function renderTable() {
             ? "Only the 90 newest scanner mints use the market-data fast path"
             : "Waiting for indexed market data";
       return `<tr tabindex="0" data-event-id="${escapeHtml(token.tokenEventId)}"><td><div class="token-heading"><button class="pin-button${pinned ? " pinned" : ""}" type="button" data-pin-mint="${escapeHtml(token.mint)}" aria-pressed="${pinned}" aria-label="${pinned ? "Unpin" : "Pin"} ${escapeHtml(token.name)}" title="${pinned ? "Unpin token" : "Pin token"}"><span aria-hidden="true">${pinned ? "&#9733;" : "&#9734;"}</span></button><span class="token-name">${escapeHtml(token.symbol)} / ${escapeHtml(token.name)}</span></div><span class="token-mint">${escapeHtml(token.mint)}</span><a class="pump-link" href="https://pump.fun/coin/${encodeURIComponent(token.mint)}" target="_blank" rel="noopener noreferrer">Pump.fun</a></td><td class="age-cell" data-detected-at="${escapeHtml(token.detectedAt)}">${age(token.detectedAt)}</td><td>${escapeHtml(titleCase(token.venue))}</td><td>${escapeHtml(titleCase(token.stage))}</td><td><span class="badge badge-${escapeHtml(token.status)}">${escapeHtml(token.status)}</span></td><td class="market-cap-cell ${marketCapAvailable ? "" : "unavailable"}" title="${escapeHtml(marketCapTitle)}">${escapeHtml(marketCapLabel)}</td><td class="signal-cell ${Number.isFinite(marketCap?.liquidityUsd) ? "" : "unavailable"}">${Number.isFinite(marketCap?.liquidityUsd) ? escapeHtml(formatUsd(marketCap.liquidityUsd)) : "Unavailable"}</td><td class="signal-cell ${Number.isFinite(activity?.buyPressurePercent) ? "" : "unavailable"}" title="Share of five-minute trades that are buys.">${Number.isFinite(activity?.buyPressurePercent) ? `${escapeHtml(activity.buyPressurePercent.toFixed(1))}%` : "Unavailable"}</td><td class="signal-cell ${Number.isFinite(activity?.volumeAcceleration) ? "" : "unavailable"}" title="Five-minute volume pace divided by the preceding ten-minute pace.">${Number.isFinite(activity?.volumeAcceleration) ? `${escapeHtml(activity.volumeAcceleration.toFixed(2))}x` : "Unavailable"}</td><td class="activity-cell ${Number.isFinite(activity?.activeTraders5m) ? "" : "unavailable"}" title="Buyer plus seller counts; a wallet active on both sides may be counted twice.">${Number.isFinite(activity?.activeTraders5m) ? escapeHtml(activity.activeTraders5m) : "Unavailable"}</td><td class="signal-cell ${Number.isFinite(marketCap?.curveProgressBps) ? "" : "unavailable"}">${Number.isFinite(marketCap?.curveProgressBps) ? `${escapeHtml((marketCap.curveProgressBps / 100).toFixed(1))}%` : "Unavailable"}</td><td class="signal-cell ${Number.isFinite(holderConcentration) ? "" : "unavailable"}" title="Share held by the ten largest token accounts; pools and bonding curves may be included.">${Number.isFinite(holderConcentration) ? `${escapeHtml(holderConcentration.toFixed(1))}%` : "Unavailable"}</td><td class="signal-cell ${Number.isFinite(marketCap?.activeBoosts) ? "" : "unavailable"}" title="Active paid DexScreener boosts; promotion is not evidence of legitimacy or organic demand.">${Number.isFinite(marketCap?.activeBoosts) ? escapeHtml(marketCap.activeBoosts) : "Unavailable"}</td><td><span class="reason">${escapeHtml(token.reasons.join("; ") || "No decision reason recorded")}</span></td><td><button class="quick-buy-button" type="button" data-quick-buy-mint="${escapeHtml(token.mint)}" ${buyEnabled ? "" : "disabled"}>Quick buy</button><span class="quick-buy-status" role="status"></span></td></tr>`;
+      return `<tr tabindex="0" data-event-id="${escapeHtml(token.tokenEventId)}"><td><div class="token-heading"><button class="pin-button${pinned ? " pinned" : ""}" type="button" data-pin-mint="${escapeHtml(token.mint)}" aria-pressed="${pinned}" aria-label="${pinned ? "Unpin" : "Pin"} ${escapeHtml(token.name)}" title="${pinned ? "Unpin token" : "Pin token"}"><span aria-hidden="true">${pinned ? "&#9733;" : "&#9734;"}</span></button><span class="token-name">${escapeHtml(token.symbol)} / ${escapeHtml(token.name)}</span></div><span class="token-mint">${escapeHtml(token.mint)}</span><span class="token-links"><a href="https://pump.fun/coin/${encodeURIComponent(token.mint)}" target="_blank" rel="noopener noreferrer">Pump.fun</a><a href="https://trade.padre.gg/trade/solana/${encodeURIComponent(token.mint)}" target="_blank" rel="noopener noreferrer">Padre chart</a></span></td><td class="age-cell" data-detected-at="${escapeHtml(token.detectedAt)}">${age(token.detectedAt)}</td><td>${escapeHtml(titleCase(token.venue))}</td><td>${escapeHtml(titleCase(token.stage))}</td><td><span class="badge badge-${escapeHtml(token.status)}">${escapeHtml(token.status)}</span></td><td class="market-cap-cell ${marketCapAvailable ? "" : "unavailable"}" title="${escapeHtml(marketCapTitle)}">${escapeHtml(marketCapLabel)}</td><td class="signal-cell ${Number.isFinite(marketCap?.liquidityUsd) ? "" : "unavailable"}">${Number.isFinite(marketCap?.liquidityUsd) ? escapeHtml(formatUsd(marketCap.liquidityUsd)) : "Unavailable"}</td><td class="signal-cell ${Number.isFinite(activity?.buyPressurePercent) ? "" : "unavailable"}" title="Share of five-minute trades that are buys.">${Number.isFinite(activity?.buyPressurePercent) ? `${escapeHtml(activity.buyPressurePercent.toFixed(1))}%` : "Unavailable"}</td><td class="signal-cell ${Number.isFinite(activity?.volumeAcceleration) ? "" : "unavailable"}" title="Five-minute volume pace divided by the preceding ten-minute pace.">${Number.isFinite(activity?.volumeAcceleration) ? `${escapeHtml(activity.volumeAcceleration.toFixed(2))}x` : "Unavailable"}</td><td class="activity-cell ${Number.isFinite(activity?.activeTraders5m) ? "" : "unavailable"}" title="Buyer plus seller counts; a wallet active on both sides may be counted twice.">${Number.isFinite(activity?.activeTraders5m) ? escapeHtml(activity.activeTraders5m) : "Unavailable"}</td><td class="signal-cell ${Number.isFinite(marketCap?.curveProgressBps) ? "" : "unavailable"}">${Number.isFinite(marketCap?.curveProgressBps) ? `${escapeHtml((marketCap.curveProgressBps / 100).toFixed(1))}%` : "Unavailable"}</td><td class="signal-cell ${Number.isFinite(holderConcentration) ? "" : "unavailable"}" title="Share held by the ten largest token accounts; pools and bonding curves may be included.">${Number.isFinite(holderConcentration) ? `${escapeHtml(holderConcentration.toFixed(1))}%` : "Unavailable"}</td><td class="signal-cell ${Number.isFinite(marketCap?.activeBoosts) ? "" : "unavailable"}" title="Active paid DexScreener boosts; promotion is not evidence of legitimacy or organic demand.">${Number.isFinite(marketCap?.activeBoosts) ? escapeHtml(marketCap.activeBoosts) : "Unavailable"}</td><td><span class="reason">${escapeHtml(token.reasons.join("; ") || "No decision reason recorded")}</span></td><td><button class="quick-buy-button" type="button" data-quick-buy-mint="${escapeHtml(token.mint)}" ${buyEnabled ? "" : "disabled"}>Quick buy</button><span class="quick-buy-status" role="status"></span></td></tr>`;
     })
     .join("");
+  elements.body.querySelectorAll(".pump-link").forEach((pumpLink) => {
+    const row = pumpLink.closest("tr[data-event-id]");
+    const token = state.tokens.find(
+      (item) => item.tokenEventId === row?.dataset.eventId,
+    );
+    if (!token) return;
+    const padreLink = document.createElement("a");
+    padreLink.className = "padre-link";
+    padreLink.href = `https://trade.padre.gg/trade/solana/${encodeURIComponent(token.mint)}`;
+    padreLink.target = "_blank";
+    padreLink.rel = "noopener noreferrer";
+    padreLink.textContent = "Padre chart";
+    pumpLink.after(padreLink);
+  });
+  elements.body.querySelectorAll("button[data-quick-buy-mint]").forEach((button) => {
+    const saved = state.quickBuyStatuses[button.dataset.quickBuyMint];
+    const status = button.parentElement.querySelector(".quick-buy-status");
+    if (!saved || !status) return;
+    status.className = saved.className;
+    status.innerHTML = saved.html;
+  });
+  elements.empty.textContent = state.candidateMode
+    ? "No tokens under one minute and $5K currently pass the available checks."
+    : "No token events recorded.";
   elements.empty.classList.toggle("hidden", tokens.length > 0);
 }
 function updateAges() {
+  if (state.candidateMode) {
+    renderTable();
+    return;
+  }
   document.querySelectorAll(".age-cell").forEach((cell) => {
     cell.textContent = age(cell.dataset.detectedAt);
   });
@@ -223,14 +270,15 @@ function renderTimeline(token) {
   return `<ol class="timeline">${token.timeline.map((entry) => `<li><div class="timeline-heading"><span class="badge badge-${escapeHtml(entry.status)}">${escapeHtml(entry.status)}</span><time datetime="${escapeHtml(entry.occurredAt)}">${escapeHtml(new Date(entry.occurredAt).toLocaleTimeString())}</time></div><p>${escapeHtml(titleCase(entry.stage))}${Number.isInteger(entry.observationToDecisionMs) ? ` · Decision in ${escapeHtml(entry.observationToDecisionMs)} ms` : ""}</p>${entry.reasons.length ? `<ul>${entry.reasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")}</ul>` : ""}</li>`).join("")}</ol>`;
 }
 function openDrawer(token) {
-  const buy = state.control?.manualBuy;
+  const buy = state.control?.phantomBuy;
+  const enabled = Boolean(buy?.enabled && state.phantomPublicKey);
   const max = buy?.enabled ? buy.maxAmountSol : 0;
   const defaultAmount = Math.min(0.01, max);
   state.selectedMint = token.mint;
   state.marketData = null;
   elements.drawerTitle.textContent = token.name;
   elements.drawerSymbol.textContent = token.symbol;
-  elements.drawerContent.innerHTML = `<section class="trade-block"><div class="trade-heading"><h3>Manual buy</h3><span class="mode-badge">${escapeHtml(buy?.mode || "Unavailable")}</span></div>${buy?.enabled ? `<form class="buy-form" id="manual-buy-form" data-mint="${escapeHtml(token.mint)}"><label><span>Amount (SOL)</span><input name="amountSol" type="number" min="0.000001" max="${escapeHtml(max)}" step="0.001" value="${escapeHtml(defaultAmount)}" required></label><button class="buy-button" type="submit">Buy ${escapeHtml(buy.mode)}</button><p class="trade-status" role="status">Maximum ${escapeHtml(max)} SOL</p></form>` : '<p class="trade-status">Manual buying is unavailable.</p>'}</section><section class="market-block" aria-labelledby="market-heading"><div class="market-heading"><div><p class="eyebrow">Live market</p><h3 id="market-heading">Price &amp; transactions</h3></div><a class="source-link" href="https://www.geckoterminal.com/solana/tokens/${escapeHtml(token.mint)}" target="_blank" rel="noopener noreferrer">GeckoTerminal</a></div><div class="market-state" id="market-state" role="status">Loading live market data...</div><div class="market-content hidden" id="market-content"><dl class="market-metrics" id="market-metrics"></dl><canvas class="price-chart" id="price-chart" width="456" height="220" aria-label="Live token price chart"></canvas><div class="chart-axis"><span>120 minutes ago</span><span>Now</span></div><div class="transaction-heading"><h4>Recent swaps</h4><span id="market-updated"></span></div><div class="transaction-scroll"><table class="transaction-table"><thead><tr><th>Time</th><th>Side</th><th>Value</th><th>Wallet</th><th>Tx</th></tr></thead><tbody id="transaction-body"></tbody></table></div></div></section><dl class="detail-grid"><div><dt>Status</dt><dd><span class="badge badge-${escapeHtml(token.status)}">${escapeHtml(token.status)}</span></dd></div><div><dt>Stage</dt><dd>${escapeHtml(titleCase(token.stage))}</dd></div><div><dt>Venue</dt><dd>${escapeHtml(titleCase(token.venue))}</dd></div><div><dt>Detected</dt><dd>${escapeHtml(new Date(token.detectedAt).toLocaleString())}</dd></div><div><dt>Mint</dt><dd>${escapeHtml(token.mint)}</dd></div><div><dt>Last update</dt><dd>${escapeHtml(new Date(token.updatedAt).toLocaleString())}</dd></div><div><dt>Safety</dt><dd class="unavailable">Unavailable</dd></div><div><dt>Momentum</dt><dd class="unavailable">Unavailable</dd></div></dl><section class="finding-block"><h3>Decision findings</h3>${token.reasons.length ? token.reasons.map((reason) => `<p class="finding">${escapeHtml(reason)}</p>`).join("") : '<p class="unavailable">No decision findings recorded.</p>'}</section><section class="timeline-block"><h3>Decision timeline</h3>${renderTimeline(token)}</section>`;
+  elements.drawerContent.innerHTML = `<section class="trade-block"><div class="trade-heading"><h3>Manual buy</h3><span class="mode-badge">Phantom</span></div>${enabled ? `<form class="buy-form" id="manual-buy-form" data-mint="${escapeHtml(token.mint)}"><label><span>Amount (SOL)</span><input name="amountSol" type="number" min="0.000001" max="${escapeHtml(max)}" step="0.001" value="${escapeHtml(defaultAmount)}" required></label><button class="buy-button" type="submit">Buy with Phantom</button><p class="trade-status" role="status">Maximum ${escapeHtml(max)} SOL</p></form>` : '<p class="trade-status">Connect Phantom to buy.</p>'}</section><section class="market-block" aria-labelledby="market-heading"><div class="market-heading"><div><p class="eyebrow">Live market</p><h3 id="market-heading">Price &amp; transactions</h3></div><a class="source-link" href="https://www.geckoterminal.com/solana/tokens/${escapeHtml(token.mint)}" target="_blank" rel="noopener noreferrer">GeckoTerminal</a></div><div class="market-state" id="market-state" role="status">Loading live market data...</div><div class="market-content hidden" id="market-content"><dl class="market-metrics" id="market-metrics"></dl><canvas class="price-chart" id="price-chart" width="456" height="220" aria-label="Live token price chart"></canvas><div class="chart-axis"><span>120 minutes ago</span><span>Now</span></div><div class="transaction-heading"><h4>Recent swaps</h4><span id="market-updated"></span></div><div class="transaction-scroll"><table class="transaction-table"><thead><tr><th>Time</th><th>Side</th><th>Value</th><th>Wallet</th><th>Tx</th></tr></thead><tbody id="transaction-body"></tbody></table></div></div></section><dl class="detail-grid"><div><dt>Status</dt><dd><span class="badge badge-${escapeHtml(token.status)}">${escapeHtml(token.status)}</span></dd></div><div><dt>Stage</dt><dd>${escapeHtml(titleCase(token.stage))}</dd></div><div><dt>Venue</dt><dd>${escapeHtml(titleCase(token.venue))}</dd></div><div><dt>Detected</dt><dd>${escapeHtml(new Date(token.detectedAt).toLocaleString())}</dd></div><div><dt>Mint</dt><dd>${escapeHtml(token.mint)}</dd></div><div><dt>Last update</dt><dd>${escapeHtml(new Date(token.updatedAt).toLocaleString())}</dd></div><div><dt>Safety</dt><dd class="unavailable">Unavailable</dd></div><div><dt>Momentum</dt><dd class="unavailable">Unavailable</dd></div></dl><section class="finding-block"><h3>Decision findings</h3>${token.reasons.length ? token.reasons.map((reason) => `<p class="finding">${escapeHtml(reason)}</p>`).join("") : '<p class="unavailable">No decision findings recorded.</p>'}</section><section class="timeline-block"><h3>Decision timeline</h3>${renderTimeline(token)}</section>`;
   elements.drawer.classList.add("open");
   elements.drawer.setAttribute("aria-hidden", "false");
   elements.backdrop.classList.remove("hidden");
@@ -366,7 +414,10 @@ async function loadControl() {
       const buy = state.control.manualBuy;
       elements.tradingMode.textContent = buy.enabled
         ? `${buy.mode} trading`
-        : "Trading unavailable";
+        : buy.mode === "live"
+          ? "Live disarmed"
+          : "Trading unavailable";
+      elements.tradingMode.title = buy.authorizationError || "";
       elements.tradingMode.classList.toggle("live", buy.mode === "live");
       elements.wallet.disabled = !state.control.wallet?.available;
       elements.quickAmount.max = String(buy.maxAmountSol);
@@ -382,6 +433,11 @@ async function loadControl() {
     elements.wallet.disabled = true;
     renderTable();
   }
+}
+function setBuyStatus(mint, status, className, html) {
+  status.className = className;
+  status.innerHTML = html;
+  state.quickBuyStatuses[mint] = { className, html };
 }
 async function refreshMarketCaps() {
   try {
@@ -449,8 +505,8 @@ async function submitBuy(
 ) {
   const buy = state.control?.manualBuy;
   if (!buy?.enabled) {
-    status.className = `${statusClass} rejected`;
-    status.textContent = "Trading unavailable.";
+    const message = buy?.authorizationError || "Trading unavailable.";
+    setBuyStatus(mint, status, `${statusClass} rejected`, escapeHtml(message));
     return;
   }
   const mode = buy.mode;
@@ -459,8 +515,12 @@ async function submitBuy(
     amountSol <= 0 ||
     amountSol > buy.maxAmountSol
   ) {
-    status.className = `${statusClass} rejected`;
-    status.textContent = `Enter up to ${buy.maxAmountSol} SOL.`;
+    setBuyStatus(
+      mint,
+      status,
+      `${statusClass} rejected`,
+      `Enter up to ${escapeHtml(buy.maxAmountSol)} SOL.`,
+    );
     return;
   }
   if (
@@ -470,8 +530,12 @@ async function submitBuy(
   )
     return;
   button.disabled = true;
-  status.className = `${statusClass} pending`;
-  status.textContent = `Submitting ${mode} buy...`;
+  setBuyStatus(
+    mint,
+    status,
+    `${statusClass} pending`,
+    `Submitting ${escapeHtml(mode)} buy...`,
+  );
   try {
     const response = await fetch("/api/manual-buy", {
       method: "POST",
@@ -491,14 +555,17 @@ async function submitBuy(
       throw new Error(
         result.error || `Manual buy rejected (${response.status})`,
       );
-    status.className = `${statusClass} success`;
-    status.innerHTML = result.signature
+    const successHtml = result.signature
       ? `Confirmed: <a href="https://solscan.io/tx/${escapeHtml(result.signature)}" target="_blank" rel="noopener noreferrer">View transaction</a>`
       : `Paper buy recorded: ${escapeHtml(result.amountSol)} SOL`;
+    setBuyStatus(mint, status, `${statusClass} success`, successHtml);
   } catch (error) {
-    status.className = `${statusClass} rejected`;
-    status.textContent =
-      error instanceof Error ? error.message : "Manual buy rejected.";
+    setBuyStatus(
+      mint,
+      status,
+      `${statusClass} rejected`,
+      escapeHtml(error instanceof Error ? error.message : "Manual buy rejected."),
+    );
   } finally {
     button.disabled = false;
   }
@@ -583,6 +650,10 @@ elements.search.addEventListener("input", () => {
 });
 elements.sort.addEventListener("change", () => {
   state.sort = elements.sort.value;
+  renderTable();
+});
+elements.candidateMode.addEventListener("change", () => {
+  state.candidateMode = elements.candidateMode.checked;
   renderTable();
 });
 elements.quickAmount.value = String(state.quickBuyAmount);
@@ -674,7 +745,8 @@ void refreshMarketCaps();
 void refreshTokenActivity();
 window.setInterval(refresh, 2000);
 window.setInterval(refreshMarketCaps, 5000);
-window.setInterval(refreshTokenActivity, 60000);
+window.setInterval(refreshTokenActivity, 30000);
+window.setInterval(loadControl, 5000);
 window.setTimeout(() => {
   void refreshHolderConcentration();
   window.setInterval(refreshHolderConcentration, 300000);

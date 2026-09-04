@@ -4,6 +4,7 @@ import { createDashboardCommandAudit } from "./dashboard-command-audit.js";
 import { readTradeHistory } from "./history.js";
 import { assertRecentLiveTradingArm } from "./live-safety.js";
 import { monitorTokens } from "./monitor.js";
+import { buildPhantomBuyTransaction } from "./phantom-trade.js";
 import { readPumpMarketMetricsUsd } from "./pump-bonding-progress.js";
 import { startScannerApi } from "./scanner-api.js";
 import { fetchTokenMarketCaps } from "./token-market-caps.js";
@@ -72,7 +73,7 @@ async function main(): Promise<void> {
           ? () => assertRecentLiveTradingArm(
             true,
             config.LIVE_TRADING_ARM_PATH,
-            60_000,
+            config.LIVE_TRADING_ARM_MAX_AGE_MS,
           )
           : undefined,
         audit: config.LIVE_TRADING ? commandAudit : undefined,
@@ -106,6 +107,16 @@ async function main(): Promise<void> {
       },
       undefined,
       (mints) => fetchTokenHolderConcentration(config.SOLANA_RPC_URL, mints),
+      {
+        maxAmountSol: config.BUY_AMOUNT_SOL,
+        build: (mint, amountSol, publicKey) => buildPhantomBuyTransaction({
+          mint,
+          amountSol,
+          publicKey,
+          slippagePercent: config.SLIPPAGE_PERCENT,
+          priorityFeeSol: config.PRIORITY_FEE_SOL,
+        }, connection()),
+      },
     );
     console.log(`Scanner dashboard listening on http://${config.DASHBOARD_API_HOST}:${config.DASHBOARD_API_PORT}`);
     return;

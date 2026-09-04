@@ -17,6 +17,7 @@ const staticAssets = new Map([
   ["/", { file: "../public/dashboard.html", contentType: "text/html; charset=utf-8" }],
   ["/dashboard.css", { file: "../public/dashboard.css", contentType: "text/css; charset=utf-8" }],
   ["/dashboard.js", { file: "../public/dashboard.js", contentType: "text/javascript; charset=utf-8" }],
+  ["/solana-web3.js", { file: "../node_modules/@solana/web3.js/lib/index.iife.min.js", contentType: "text/javascript; charset=utf-8" }],
 ]);
 const MARKET_CAP_COVERAGE_LIMIT = 90;
 
@@ -44,6 +45,10 @@ const manualBuySchema = z.object({
   amountSol: z.number().positive().max(1),
 });
 
+const phantomBuySchema = manualBuySchema.extend({
+  publicKey: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/),
+});
+
 export interface ScannerManualBuyControl {
   mode?: "paper" | "live";
   maxAmountSol: number;
@@ -52,6 +57,11 @@ export interface ScannerManualBuyControl {
   authorize?: () => Promise<void>;
   audit?: DashboardCommandAudit;
   execute: (mint: string, amountSol: number, commandId: string) => Promise<string | void>;
+}
+
+export interface ScannerPhantomBuyControl {
+  maxAmountSol: number;
+  build: (mint: string, amountSol: number, publicKey: string) => Promise<Uint8Array>;
 }
 
   export type TokenMarketDataProvider = (mint: string) => Promise<TokenMarketData>;
@@ -207,6 +217,7 @@ export function createScannerApiServer(
   marketCapsProvider: TokenMarketCapsProvider = fetchTokenMarketCaps,
   activityProvider: TokenActivityProvider = fetchTokenActivity,
   holderConcentrationProvider?: TokenHolderConcentrationProvider,
+  phantomBuy?: ScannerPhantomBuyControl,
 ): Server {
   const manualBuyCommands = new Map<string, {
     mint: string;
@@ -249,6 +260,61 @@ export function createScannerApiServer(
   return createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", "http://localhost");
+      if (request.method === "POST" && url.pathname === "/api/phantom-buy-transaction") {
+        const expectedOrigin = `http://${request.headers.host}`;
+        if (request.headers.origin !== expectedOrigin
+          || request.headers["x-snipa-csrf"] !== csrfToken) {
+          sendJson(response, 403, { error: "Phantom buy request failed origin or CSRF validation." });
+          return;
+        }
+        if (!phantomBuy) {
+          sendJson(response, 503, { error: "Phantom manual buying is unavailable." });
+          return;
+        }
+        let body: unknown;
+        try {
+          body = await readJsonBody(request);
+        } catch {
+          sendJson(response, 400, { error: "Invalid Phantom buy request." });
+          return;
+        }
+        const parsed = phantomBuySchema.safeParse(body);
+        if (!parsed.success) {
+          sendJson(response, 400, { error: "Invalid Phantom buy request." });
+          return;
+        }
+        const input = parsed.data;
+        const commandAgeMs = now().getTime() - Date.parse(input.createdAt);
+        if (commandAgeMs < -5_000 || commandAgeMs > 30_000) {
+          sendJson(response, 400, { error: "Phantom buy request has expired." });
+          return;
+        }
+        if (input.amountSol > phantomBuy.maxAmountSol) {
+          sendJson(response, 400, {
+            error: `Buy amount exceeds the ${phantomBuy.maxAmountSol} SOL limit.`,
+          });
+          return;
+        }
+        const snapshot = await buildScannerApiSnapshot(eventLogPath, now, staleAfterMs);
+        if (!snapshot.tokens.some((token) => token.mint === input.mint)) {
+          sendJson(response, 404, { error: "Phantom buy mint is not present in the scanner." });
+          return;
+        }
+        try {
+          const transaction = await phantomBuy.build(input.mint, input.amountSol, input.publicKey);
+          sendJson(response, 200, {
+            commandId: input.commandId,
+            mint: input.mint,
+            amountSol: input.amountSol,
+            transaction: Buffer.from(transaction).toString("base64"),
+          });
+        } catch (error) {
+          sendJson(response, 422, {
+            error: error instanceof Error ? error.message : "Phantom transaction could not be built.",
+          });
+        }
+        return;
+      }
       if (request.method === "POST" && url.pathname === "/api/manual-buy") {
         const expectedOrigin = `http://${request.headers.host}`;
         if (request.headers.origin !== expectedOrigin
@@ -410,12 +476,38 @@ export function createScannerApiServer(
         return;
       }
       if (url.pathname === "/api/control") {
+        let authorizationError: string | null = null;
+        if (manualBuy && liveControlReady && mode === "live") {
+          try {
+            await manualBuy.authorize?.();
+          } catch (error) {
+            authorizationError = error instanceof Error
+              ? error.message
+              : "Live trading is disarmed.";
+          }
+        }
+        const manualBuyEnabled = Boolean(manualBuy)
+          && liveControlReady
+          && authorizationError === null;
         sendJson(response, 200, {
           csrfToken,
-          manualBuy: manualBuy && liveControlReady
-            ? { enabled: true, mode, maxAmountSol: manualBuy.maxAmountSol }
-            : { enabled: false, mode: "unavailable", maxAmountSol: null },
+          manualBuy: manualBuy
+            ? {
+                enabled: manualBuyEnabled,
+                mode,
+                maxAmountSol: manualBuy.maxAmountSol,
+                authorizationError,
+              }
+            : {
+                enabled: false,
+                mode: "unavailable",
+                maxAmountSol: null,
+                authorizationError: null,
+              },
           wallet: { available: Boolean(wallet), custody: "local" },
+          phantomBuy: phantomBuy
+            ? { enabled: true, maxAmountSol: phantomBuy.maxAmountSol }
+            : { enabled: false, maxAmountSol: null },
         });
         return;
       }
@@ -487,7 +579,7 @@ export function createScannerApiServer(
           || activityCache.expiresAt <= now().getTime()) {
           activityCache = {
             mintKey,
-            expiresAt: now().getTime() + 60_000,
+            expiresAt: now().getTime() + 30_000,
             value: activityProvider(mints),
           };
         }
@@ -576,6 +668,7 @@ export async function startScannerApi(
   marketCapsProvider?: TokenMarketCapsProvider,
   activityProvider?: TokenActivityProvider,
   holderConcentrationProvider?: TokenHolderConcentrationProvider,
+  phantomBuy?: ScannerPhantomBuyControl,
 ): Promise<Server> {
   const server = createScannerApiServer(
     eventLogPath,
@@ -588,6 +681,7 @@ export async function startScannerApi(
     marketCapsProvider,
     activityProvider,
     holderConcentrationProvider,
+    phantomBuy,
   );
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);

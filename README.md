@@ -305,6 +305,13 @@ are available; older rows show `Outside fast window`. The response is cached for
 boosts` is DexScreener's active paid-boost count for that same pool;
 it measures purchased visibility, not legitimacy, organic demand, or expected
 profitability.
+
+`First minute / <$5K` keeps non-terminal tokens younger than 60 seconds whose
+verified market cap is below $5,000. When buyer telemetry is available, it also
+requires at least one buyer and buy pressure above 50%. Provider-unavailable
+buyer data remains visibly unavailable and does not hide every age/cap candidate.
+Each scanner row links directly to both Pump.fun and Padre's Solana chart for the
+token mint.
 The `Active traders (5m)` column is an attention proxy from GeckoTerminal's top
 indexed pool, calculated as five-minute buyers plus sellers. A wallet active on
 both sides may be counted twice, so this is not a unique visitor count. Both sort
@@ -319,6 +326,11 @@ raw RPC token balances and total supply for the five newest tokens every five
 minutes; it may include pools or bonding-curve accounts and is not an identity-
 level holder metric. Every signal can be sorted in either direction, with
 unavailable values last.
+`First minute / <$5K` shortlists non-rejected tokens detected less than 60
+seconds ago with an indexed market cap below $5,000, at least one distinct
+five-minute buyer, and buy pressure above 50%. Activity for the 30 newest mints
+refreshes every 30 seconds. This is an elimination view, not a rug, honeypot, or
+profitability guarantee.
 Each detected token also has a clearly labeled manual-buy control capped by
 `BUY_AMOUNT_SOL`. Submitting it requires confirmation,
 a fresh command UUID and timestamp, same-origin and CSRF validation, and an exact
@@ -371,11 +383,17 @@ report P95 as `OK`, `ALERT`, or `NO_SAMPLES`; no threshold is assumed by default
 Test paper mode first. To permit live manual orders, set `LIVE_TRADING=true`.
 For event-driven buys, both `LIVE_TRADING=true` and `AUTO_BUY=true` must be set.
 Live execution also requires `LIVE_TRADING_ARM_PATH` to point to a file whose
-only content is the exact acknowledgement below:
+only content is the exact acknowledgement below. Set
+`LIVE_TRADING_ARM_MAX_AGE_MS` to control its validity window; it defaults to
+60 seconds and is capped at one hour.
 
 ```powershell
 Set-Content -NoNewline live-trading.armed "I_ACKNOWLEDGE_LIVE_TRADING_RISK"
 ```
+
+The dashboard reports `Live disarmed` and disables buy buttons until this file
+exists with the exact acknowledgement and is within the configured validity
+window. This does not enable event-driven buys unless `AUTO_BUY=true`.
 
 Delete the file to disarm subsequent execution immediately:
 

@@ -5,13 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>Snipa Scanner</title>
-  <link rel="stylesheet" href="/dashboard.css">
-  <script src="/dashboard.js" defer></script>
+  <link rel="stylesheet" href="/dashboard.css?v=4">
+  <script src="/solana-web3.js" defer></script>
+  <script src="/dashboard.js?v=5" defer></script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand-block"><div class="brand-mark" aria-hidden="true">S</div><div><p class="brand">SNIPA</p><p class="environment">Scanner control plane</p></div></div>
-    <div class="health-strip" aria-label="System health"><span class="health-dot" id="health-dot"></span><span id="health-label">Connecting</span><span class="separator"></span><span id="decision-latency" title="Local time from WebSocket observation to first decision">Decision P95 unavailable</span><span class="separator"></span><span id="last-update">No update</span><span class="mode-badge" id="trading-mode">Trading unavailable</span><button class="plain-button" id="wallet-button" type="button">Connect local wallet</button><button class="plain-button" id="refresh-button" type="button">Refresh</button></div>
+    <div class="health-strip" aria-label="System health"><span class="health-dot" id="health-dot"></span><span id="health-label">Connecting</span><span class="separator"></span><span id="decision-latency" title="Local time from WebSocket observation to first decision">Decision P95 unavailable</span><span class="separator"></span><span id="last-update">No update</span><span class="mode-badge" id="trading-mode">Trading unavailable</span><button class="plain-button" id="wallet-button" type="button">Connect Phantom</button><button class="plain-button" id="refresh-button" type="button">Refresh</button></div>
   </header>
   <main>
     <section class="summary-band" aria-labelledby="scanner-heading">
@@ -27,6 +28,7 @@
         <label class="search-control"><span>Search</span><input id="search-input" type="search" placeholder="Name, symbol, or mint" autocomplete="off"></label>
         <label class="sort-control"><span>Sort</span><select id="sort-select"><option value="newest">Newest detected</option><option value="oldest">Oldest detected</option><option value="market-cap-desc">Market cap: high to low</option><option value="market-cap-asc">Market cap: low to high</option><option value="liquidity-desc">Liquidity: high to low</option><option value="liquidity-asc">Liquidity: low to high</option><option value="buy-pressure-desc">Buy pressure: high to low</option><option value="buy-pressure-asc">Buy pressure: low to high</option><option value="volume-acceleration-desc">Volume acceleration: high to low</option><option value="volume-acceleration-asc">Volume acceleration: low to high</option><option value="activity-desc">Active traders: high to low</option><option value="activity-asc">Active traders: low to high</option><option value="curve-progress-desc">Curve progress: high to low</option><option value="curve-progress-asc">Curve progress: low to high</option><option value="holders-desc">Top-10 accounts: high to low</option><option value="holders-asc">Top-10 accounts: low to high</option><option value="boosts-desc">Paid boosts: high to low</option><option value="boosts-asc">Paid boosts: low to high</option><option value="status">Status</option><option value="token">Token name</option></select></label>
         <label class="quick-amount-control"><span>Quick buy (SOL)</span><input id="quick-buy-amount" type="number" min="0.000001" step="0.001" value="0.01" inputmode="decimal"></label>
+        <label class="candidate-toggle" title="Requires positive buyers and over 50% buy pressure when buyer telemetry is available."><input id="candidate-mode" type="checkbox"><span>First minute / &lt;$5K</span></label>
         <div class="status-filters" id="status-filters" aria-label="Filter by status">
           <button class="filter-button active" type="button" data-status="">All</button><button class="filter-button" type="button" data-status="scanning">Scanning</button>
           <button class="filter-button" type="button" data-status="monitoring">Monitoring</button><button class="filter-button" type="button" data-status="entered">Entered</button>

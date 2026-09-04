@@ -37,6 +37,7 @@ const poolsSchema = z.object({
 export interface TokenActivity {
   mint: string;
   activeTraders5m: number | null;
+  buyers5m?: number | null;
   buyPressurePercent: number | null;
   volumeAcceleration: number | null;
 }
@@ -92,6 +93,7 @@ export async function fetchTokenActivity(
       const prior10mVolume = volume15m - volume5m;
       results.set(mint, {
         activeTraders5m: transactions.buyers + transactions.sellers,
+        buyers5m: transactions.buyers,
         buyPressurePercent: tradeCount === 0 ? null : transactions.buys / tradeCount * 100,
         volumeAcceleration: Number.isFinite(volume5m)
           && Number.isFinite(prior10mVolume)
@@ -105,6 +107,7 @@ export async function fetchTokenActivity(
   return uniqueMints.map((mint) => ({
     mint,
     activeTraders5m: results.get(mint)?.activeTraders5m ?? null,
+    buyers5m: results.get(mint)?.buyers5m ?? null,
     buyPressurePercent: results.get(mint)?.buyPressurePercent ?? null,
     volumeAcceleration: results.get(mint)?.volumeAcceleration ?? null,
   }));

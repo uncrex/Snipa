@@ -170,6 +170,59 @@ test("manual paper buys require fresh same-origin commands and execute once", as
   assert.equal(executions.length, 1);
 });
 
+test("Phantom buys return unsigned transaction bytes", async (context) => {
+  const path = join(tmpdir(), `snipa-scanner-phantom-${process.pid}-${Date.now()}.jsonl`);
+  context.after(() => rm(path, { force: true }));
+  await writeFile(path, serializeProjectionEvent(detected));
+  const requests: Array<{ mint: string; amountSol: number; publicKey: string }> = [];
+  const server = createScannerApiServer(
+    path,
+    () => new Date("2026-08-31T12:00:02.000Z"),
+    60_000,
+    undefined,
+    "test-csrf-token",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      maxAmountSol: 0.01,
+      build: async (mint, amountSol, publicKey) => {
+        requests.push({ mint, amountSol, publicKey });
+        return Uint8Array.from([1, 2, 3]);
+      },
+    },
+  );
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  context.after(() => new Promise<void>((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  }));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Expected TCP server address.");
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const body = {
+    commandId: randomUUID(),
+    createdAt: "2026-08-31T12:00:02.000Z",
+    mint: token.mint,
+    amountSol: 0.005,
+    publicKey: "11111111111111111111111111111111",
+  };
+  const response = await fetch(`${baseUrl}/api/phantom-buy-transaction`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: baseUrl,
+      "X-Snipa-CSRF": "test-csrf-token",
+    },
+    body: JSON.stringify(body),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal((await response.json() as { transaction: string }).transaction, "AQID");
+  assert.deepEqual(requests, [{ mint: token.mint, amountSol: 0.005, publicKey: body.publicKey }]);
+});
+
 test("token market data is limited to scanner mints and cached briefly", async (context) => {
   const path = join(tmpdir(), `snipa-scanner-market-${process.pid}-${Date.now()}.jsonl`);
   context.after(() => rm(path, { force: true }));
@@ -459,4 +512,43 @@ test("scanner API snapshot exposes replayed stream continuity state", async (con
   }]);
   assert.equal(snapshot.freshness.lastEventAt, "2026-08-31T12:00:03.000Z");
   assert.equal(snapshot.replay.validLines, 1);
+});
+
+test("dashboard control disables live buying when authorization is disarmed", async (context) => {
+  const path = join(tmpdir(), `snipa-scanner-disarmed-${process.pid}-${Date.now()}.jsonl`);
+  context.after(() => rm(path, { force: true }));
+  await writeFile(path, serializeProjectionEvent(detected));
+  let executions = 0;
+  const server = createScannerApiServer(
+    path,
+    () => new Date("2026-08-31T12:00:02.000Z"),
+    60_000,
+    {
+      mode: "live",
+      maxAmountSol: 0.01,
+      authorize: async () => { throw new Error("Live trading is disarmed for test."); },
+      audit: { get: async () => undefined, append: async () => undefined },
+      execute: async () => { executions += 1; return "signature"; },
+    },
+    "test-csrf-token",
+  );
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  context.after(() => new Promise<void>((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  }));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Expected TCP server address.");
+
+  const response = await fetch(`http://127.0.0.1:${address.port}/api/control`);
+  const body = await response.json() as {
+    manualBuy: { enabled: boolean; mode: string; authorizationError: string | null };
+  };
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.manualBuy, {
+    enabled: false,
+    mode: "live",
+    maxAmountSol: 0.01,
+    authorizationError: "Live trading is disarmed for test.",
+  });
+  assert.equal(executions, 0);
 });

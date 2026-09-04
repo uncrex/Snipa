@@ -555,6 +555,7 @@ test("executeTrade journals a candidate and its validation failure", async () =>
   const config = {
     SOLANA_RPC_URL: "https://api.mainnet-beta.solana.com",
     LIVE_TRADING: false,
+    LIVE_TRADING_ARM_MAX_AGE_MS: 60_000,
     AUTO_BUY: false,
     BUY_AMOUNT_SOL: 0.01,
     MAX_BUYS_PER_SESSION: 1,
@@ -631,6 +632,7 @@ test("live buys fail closed when durable pre-broadcast journaling is unavailable
     SOLANA_RPC_URL: "https://api.mainnet-beta.solana.com",
     LIVE_TRADING: true,
     LIVE_TRADING_ARM_PATH: "ignored.armed",
+    LIVE_TRADING_ARM_MAX_AGE_MS: 60_000,
     AUTO_BUY: false,
     BUY_AMOUNT_SOL: 0.01,
     MAX_BUYS_PER_SESSION: 1,
@@ -677,6 +679,7 @@ test("live buys are fenced by malformed or unresolved journal state", async () =
     SOLANA_RPC_URL: "https://api.mainnet-beta.solana.com",
     LIVE_TRADING: true,
     LIVE_TRADING_ARM_PATH: "ignored.armed",
+    LIVE_TRADING_ARM_MAX_AGE_MS: 60_000,
     AUTO_BUY: false,
     BUY_AMOUNT_SOL: 0.01,
     MAX_BUYS_PER_SESSION: 1,
@@ -748,6 +751,7 @@ test("paper trades do not depend on journal availability", async () => {
   const paperConfig = {
     SOLANA_RPC_URL: "https://api.mainnet-beta.solana.com",
     LIVE_TRADING: false,
+    LIVE_TRADING_ARM_MAX_AGE_MS: 60_000,
     AUTO_BUY: false,
     BUY_AMOUNT_SOL: 0.01,
     MAX_BUYS_PER_SESSION: 1,

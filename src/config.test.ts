@@ -29,3 +29,15 @@ test("compute headroom basis points are optional and bounded", () => {
   assert.throws(() => parseConfig({ MIN_COMPUTE_HEADROOM_BPS: "10000" }), /Invalid configuration/);
 });
 
+test("live trading arm duration is configurable and bounded", () => {
+  assert.equal(parseConfig({}).LIVE_TRADING_ARM_MAX_AGE_MS, 60_000);
+  assert.equal(
+    parseConfig({ LIVE_TRADING_ARM_MAX_AGE_MS: "600000" }).LIVE_TRADING_ARM_MAX_AGE_MS,
+    600_000,
+  );
+  assert.throws(
+    () => parseConfig({ LIVE_TRADING_ARM_MAX_AGE_MS: "3600001" }),
+    /Invalid configuration/,
+  );
+});
+

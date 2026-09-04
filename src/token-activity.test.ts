@@ -37,12 +37,14 @@ test("token activity maps top pools and leaves unindexed tokens unavailable", as
     {
       mint: firstMint,
       activeTraders5m: 8,
+      buyers5m: 6,
       buyPressurePercent: 80,
       volumeAcceleration: 3,
     },
     {
       mint: secondMint,
       activeTraders5m: null,
+      buyers5m: null,
       buyPressurePercent: null,
       volumeAcceleration: null,
     },
